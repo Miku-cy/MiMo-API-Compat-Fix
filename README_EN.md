@@ -170,10 +170,118 @@ MiMo-API-Compat-Fix/
     └── api-compatibility.md
 ```
 
+## Tool Configuration Guide
+
+> Prerequisite: Start the proxy first: `python proxy/server.py`
+
+### Cursor
+
+1. Settings → search `OpenAI API`
+2. Set **Base URL** to: `http://localhost:9090/v1`
+3. Enter your MiMo API Key
+4. Restart Cursor
+
+### TRAE
+
+1. Settings → Model Config → Custom API
+2. **URL**: `http://localhost:9090/v1`
+3. **Key**: your MiMo key
+
+### Roo Code
+
+1. Settings → Provider → OpenAI Compatible
+2. **Base URL**: `http://localhost:9090/v1`
+3. **API Key**: your MiMo key
+
+### Codex
+
+Set environment variables:
+```bash
+export OPENAI_BASE_URL=http://localhost:9090/v1
+export OPENAI_API_KEY=your-key
+```
+
+### GitHub Copilot CLI
+
+Edit `~/.config/github-copilot/config.json`:
+```json
+{
+  "openai_base_url": "http://localhost:9090/v1",
+  "openai_api_key": "your-key"
+}
+```
+
+### Zed
+
+Edit `~/.config/zed/settings.json`:
+```json
+{
+  "language_model": {
+    "openai_api_url": "http://localhost:9090/v1",
+    "openai_api_key": "your-key"
+  }
+}
+```
+
+### AutoGen
+
+```python
+config_list = [{
+    "model": "mimo-v2.5-pro",
+    "base_url": "http://localhost:9090/v1",
+    "api_key": "your-key"
+}]
+```
+
+### Goose
+
+Edit `~/.config/goose/config.json`:
+```json
+{
+  "base_url": "http://localhost:9090/v1",
+  "api_key": "your-key"
+}
+```
+
+### OpenClaw
+
+**Method 1: Source Patch (Recommended)**
+```bash
+python scripts/patch_openclaw.py
+```
+
+**Method 2: Config Fix**
+
+Add to model config in `openclaw.json`:
+```json
+{
+  "id": "mimo-v2.5-pro",
+  "reasoning": true,
+  "compat": {
+    "thinkingFormat": "deepseek"
+  }
+}
+```
+
+> 💡 Both methods can be used together.
+
+### OpenCode / Kilo Code
+
+Set Anthropic compatible endpoint:
+```json
+{
+  "anthropic_base_url": "http://localhost:9090/v1",
+  "anthropic_api_key": "your-key"
+}
+```
+
+---
+
 ## Docs
 
 - [Troubleshooting](docs/troubleshooting.md)
 - [API Compatibility Details](docs/api-compatibility.md)
+- [AI Agent Guide](docs/ai-agent-guide.md)
 
 ## License
 

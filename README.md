@@ -170,10 +170,118 @@ MiMo-API-Compat-Fix/
     └── api-compatibility.md
 ```
 
+## 各工具配置教程
+
+> 前提：先启动代理 `python proxy/server.py`
+
+### Cursor
+
+1. Settings → 搜索 `OpenAI API`
+2. **Base URL** 改为：`http://localhost:9090/v1`
+3. **API Key** 填你的 MiMo Key
+4. 重启 Cursor
+
+### TRAE
+
+1. Settings → 模型配置 → 自定义 API
+2. **地址**：`http://localhost:9090/v1`
+3. **Key**：你的 MiMo Key
+
+### Roo Code
+
+1. Settings → Provider → OpenAI Compatible
+2. **Base URL**：`http://localhost:9090/v1`
+3. **API Key**：你的 MiMo Key
+
+### Codex
+
+设置环境变量：
+```bash
+export OPENAI_BASE_URL=http://localhost:9090/v1
+export OPENAI_API_KEY=你的key
+```
+
+### GitHub Copilot CLI
+
+编辑 `~/.config/github-copilot/config.json`：
+```json
+{
+  "openai_base_url": "http://localhost:9090/v1",
+  "openai_api_key": "你的key"
+}
+```
+
+### Zed
+
+编辑 `~/.config/zed/settings.json`：
+```json
+{
+  "language_model": {
+    "openai_api_url": "http://localhost:9090/v1",
+    "openai_api_key": "你的key"
+  }
+}
+```
+
+### AutoGen
+
+```python
+config_list = [{
+    "model": "mimo-v2.5-pro",
+    "base_url": "http://localhost:9090/v1",
+    "api_key": "你的key"
+}]
+```
+
+### Goose
+
+编辑 `~/.config/goose/config.json`：
+```json
+{
+  "base_url": "http://localhost:9090/v1",
+  "api_key": "你的key"
+}
+```
+
+### OpenClaw
+
+**方式一：源码补丁（推荐）**
+```bash
+python scripts/patch_openclaw.py
+```
+
+**方式二：配置修复**
+
+在 `openclaw.json` 的模型配置中添加：
+```json
+{
+  "id": "mimo-v2.5-pro",
+  "reasoning": true,
+  "compat": {
+    "thinkingFormat": "deepseek"
+  }
+}
+```
+
+> 💡 两种方式可同时使用。
+
+### OpenCode / Kilo Code
+
+在配置中设置 Anthropic 兼容端点：
+```json
+{
+  "anthropic_base_url": "http://localhost:9090/v1",
+  "anthropic_api_key": "你的key"
+}
+```
+
+---
+
 ## 相关文档
 
 - [故障排除](docs/troubleshooting.md)
 - [API 兼容性详情](docs/api-compatibility.md)
+- [AI Agent 使用指南](docs/ai-agent-guide.md)
 
 ## License
 
