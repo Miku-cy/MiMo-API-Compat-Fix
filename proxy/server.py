@@ -560,6 +560,76 @@ async def health():
     return {"status": "ok", "uptime": time.time() - stats["start_time"]}
 
 
+@app.get("/health/upstream")
+async def health_upstream(request: Request):
+    """探测上游 MiMo API 可用性"""
+    api_key = get_api_key(request)
+    api_base = get_api_base(request)
+    result = {
+        "upstream": api_base,
+        "model_list": None,
+        "chat_test": None,
+        "latency_ms": None,
+    }
+
+    # 1. 测试模型列表
+    try:
+        start = time.time()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{api_base}/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            latency = (time.time() - start) * 1000
+            result["model_list"] = {
+                "status": resp.status_code,
+                "ok": resp.status_code == 200,
+                "latency_ms": round(latency, 1),
+            }
+    except Exception as e:
+        result["model_list"] = {"status": "error", "ok": False, "error": str(e)}
+
+    # 2. 测试简单对话（轻量级）
+    try:
+        start = time.time()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "mimo-v2-flash",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 5,
+                },
+            )
+            latency = (time.time() - start) * 1000
+            result["chat_test"] = {
+                "status": resp.status_code,
+                "ok": resp.status_code == 200,
+                "latency_ms": round(latency, 1),
+            }
+            result["latency_ms"] = round(latency, 1)
+    except Exception as e:
+        result["chat_test"] = {"status": "error", "ok": False, "error": str(e)}
+
+    # 综合状态
+    all_ok = (
+        result["model_list"]
+        and result["model_list"].get("ok")
+        and result["chat_test"]
+        and result["chat_test"].get("ok")
+    )
+    result["status"] = "ok" if all_ok else "degraded"
+
+    return JSONResponse(
+        content=result,
+        status_code=200 if all_ok else 503,
+    )
+
+
 @app.get("/stats")
 async def get_stats():
     """统计信息"""
@@ -598,7 +668,7 @@ async def root():
     """根路径"""
     return {
         "name": "MiMo API Compat Proxy",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "description": "透明修复小米 MiMo API 兼容性问题（支持推理内容缓存）",
         "features": [
             "reasoning_content 自动补丁",
@@ -610,6 +680,7 @@ async def root():
             "anthropic": "/v1/messages",
             "models": "/v1/models",
             "health": "/health",
+            "health_upstream": "/health/upstream",
             "stats": "/stats",
             "cache_stats": "/cache/stats",
             "cache_clear": "POST /cache/clear",
