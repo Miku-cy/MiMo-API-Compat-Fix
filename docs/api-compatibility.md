@@ -17,13 +17,15 @@
   "tool_calls": [{...}]
 }
 
-// ❌ 错误（会返回 400）
+// ❌ 错误（返回 400）
 {
   "role": "assistant",
   "content": "",
   "tool_calls": [{...}]
 }
 ```
+
+> 此规则适用于**所有 MiMo V2 系列模型**，包括非推理模型 MiMo-V2-Flash。
 
 ### 2. 推理输出格式
 
@@ -48,15 +50,15 @@ MiMo 使用 DeepSeek 兼容的推理格式：
 }
 ```
 
-### 3. 支持的模型
+### 3. 受影响模型
 
 | 模型 | 推理 | 图像 | 上下文 | 最大输出 |
 |------|------|------|--------|---------|
-| mimo-v2.5-pro | ✅ | ❌ | 1M | 32K |
-| mimo-v2.5 | ✅ | ✅ | 256K | 32K |
-| mimo-v2-flash | ❌ | ❌ | 256K | 8K |
-| mimo-v2-pro | ✅ | ❌ | 1M | 32K |
-| mimo-v2-omni | ✅ | ✅ | 256K | 32K |
+| MiMo-V2.5-Pro | ✅ | ❌ | 1M | 32K |
+| MiMo-V2.5 | ✅ | ✅ | 256K | 32K |
+| MiMo-V2-Pro | ✅ | ❌ | 1M | 32K |
+| MiMo-V2-Omni | ✅ | ✅ | 256K | 32K |
+| MiMo-V2-Flash | ❌ | ❌ | 256K | 8K |
 
 ### 4. 流式响应格式
 
@@ -89,6 +91,38 @@ data: [DONE]
 }
 ```
 
+## OpenClaw 修复方案
+
+### OpenAI 协议（配置 + 源码补丁）
+
+OpenClaw 使用 OpenAI 协议连接 MiMo API 时，需要两个修复：
+
+**1. 配置修复** — 在 `openclaw.json` 中声明模型支持推理：
+
+```json
+{
+  "id": "mimo-v2.5-pro",
+  "reasoning": true,
+  "compat": {
+    "thinkingFormat": "deepseek"
+  }
+}
+```
+
+**2. 源码补丁** — 修改 pi-ai 库，回放历史时提取真实 thinking content：
+
+```bash
+python scripts/patch_openclaw.py
+```
+
+补丁逻辑：
+- 有 thinking blocks → 提取真实内容填入 `reasoning_content`
+- 无 thinking blocks → 降级为空字符串（保证不报错）
+
+### Anthropic 协议（源码补丁）
+
+Anthropic 协议同样需要源码补丁，逻辑相同。补丁脚本同时覆盖两种协议。
+
 ## 各工具兼容性
 
 ### OpenAI 协议工具
@@ -103,6 +137,7 @@ data: [DONE]
 | Zed | ⚠️ 部分 | ✅ 推荐 | 否 |
 | AutoGen | ⚠️ 部分 | ✅ 推荐 | 否 |
 | Goose | ⚠️ 部分 | ✅ 推荐 | 否 |
+| OpenClaw | ✅ 配置 | 可选 | ✅ 源码补丁 |
 
 ### Anthropic 协议工具
 
@@ -123,9 +158,10 @@ data: [DONE]
          ↓
     1. 解析请求
     2. 检测 tool_calls 消息
-    3. 注入 reasoning_content
+    3. 注入 reasoning_content（优先从缓存获取真实内容）
     4. 转发到上游
-    5. 返回响应
+    5. 缓存响应中的推理内容
+    6. 返回响应
 ```
 
 代理对客户端完全透明，无需修改客户端代码。

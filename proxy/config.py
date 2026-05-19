@@ -19,12 +19,18 @@ MIMO_MODELS = [
     "mimo-v2-omni",
 ]
 
-# 推理模型（需要 reasoning_content 补丁的模型）
+# 受影响的 MiMo 模型（API 要求 tool_calls 时必须带 reasoning_content）
 REASONING_MODELS = [
     "mimo-v2.5",
     "mimo-v2.5-pro",
     "mimo-v2-pro",
     "mimo-v2-omni",
+    "mimo-v2-flash",
+    "MiMo-V2.5-Pro",
+    "MiMo-V2.5",
+    "MiMo-V2-Pro",
+    "MiMo-V2-Omni",
+    "MiMo-V2-Flash",
 ]
 
 # 日志配置
