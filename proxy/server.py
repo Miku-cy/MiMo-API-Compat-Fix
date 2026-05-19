@@ -633,14 +633,14 @@ def main():
     parser.add_argument("--cache-file", default="", help="缓存文件路径")
     args = parser.parse_args()
 
-    global MIMO_API_KEY, MIMO_API_BASE, LOG_LEVEL, reasoning_cache
+    global MIMO_API_KEY, MIMO_API_BASE, reasoning_cache
 
     if args.api_key:
         MIMO_API_KEY = args.api_key
     if args.api_base:
         MIMO_API_BASE = args.api_base
     if args.log_level:
-        LOG_LEVEL = args.log_level
+        logging.getLogger().setLevel(getattr(logging, args.log_level.upper(), logging.INFO))
     if args.no_cache:
         reasoning_cache = None
         logger.info("Reasoning cache disabled via CLI")

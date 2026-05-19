@@ -45,11 +45,15 @@ PATCH_MARKER_END = "// MIMO_COMPAT_PATCH_END"
 PATCH_CODE = '''
     // MIMO_COMPAT_PATCH - MiMo API reasoning_content compatibility fix
     // When assistant message has tool_calls but no reasoning_content,
-    // inject empty string to satisfy MiMo API requirements.
+    // extract real thinking content from blocks (falls back to empty string).
     if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0 
         && assistantMsg.reasoning_content === undefined 
         && model && model.provider && model.provider.startsWith("xiaomi")) {
-      assistantMsg.reasoning_content = "";
+      if (nonEmptyThinkingBlocks && nonEmptyThinkingBlocks.length > 0) {
+        assistantMsg.reasoning_content = nonEmptyThinkingBlocks.map((block) => sanitizeSurrogates(block.thinking)).join("\n\n");
+      } else {
+        assistantMsg.reasoning_content = "";
+      }
     }
     // MIMO_COMPAT_PATCH_END
 '''
