@@ -1,0 +1,7 @@
+{
+  "_comment": "Zed MiMo 配置 - 放入 settings.json 的 language_model 部分",
+  "language_model": {
+    "openai_api_url": "http://127.0.0.1:9090/v1",
+    "openai_api_key": "your-mimo-api-key"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "_comment": "Goose MiMo 配置",
+  "openaiBaseUrl": "http://127.0.0.1:9090/v1",
+  "openaiApiKey": "your-mimo-api-key"
+}

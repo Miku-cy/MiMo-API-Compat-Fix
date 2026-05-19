@@ -1,0 +1,5 @@
+{
+  "_comment": "Goose MiMo 配置 - Anthropic 协议部分",
+  "anthropic_base_url": "http://127.0.0.1:9090/v1",
+  "anthropic_api_key": "your-mimo-api-key"
+}

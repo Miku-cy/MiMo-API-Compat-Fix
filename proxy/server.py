@@ -1,0 +1,508 @@
+#!/usr/bin/env python3
+"""
+MiMo API 兼容性代理服务器
+
+透明代理 MiMo API 请求，自动修复兼容性问题。
+支持 OpenAI 和 Anthropic 两种协议格式。
+
+用法：
+    python server.py [--port 9090] [--host 127.0.0.1] [--api-key KEY] [--api-base URL]
+
+环境变量：
+    MIMO_API_KEY       MiMo API 密钥
+    MIMO_API_BASE      MiMo API 地址（默认：https://token-plan-cn.xiaomimimo.com/v1）
+    MIMO_PROXY_HOST    代理监听地址（默认：127.0.0.1）
+    MIMO_PROXY_PORT    代理端口（默认：9090）
+    MIMO_LOG_LEVEL     日志级别（默认：INFO）
+"""
+
+import argparse
+import json
+import logging
+import sys
+import time
+from pathlib import Path
+
+import httpx
+import uvicorn
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
+
+from config import (
+    LOG_FILE,
+    LOG_LEVEL,
+    MIMO_API_BASE,
+    MIMO_API_KEY,
+    PROXY_HOST,
+    PROXY_PORT,
+    REASONING_MODELS,
+)
+from patches import patch_request, patch_stream_chunk
+
+# ── 日志配置 ──────────────────────────────────────────────────────────────
+
+log_handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+if LOG_FILE:
+    log_handlers.append(logging.FileHandler(LOG_FILE))
+
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=log_handlers,
+)
+logger = logging.getLogger("mimo-compat")
+
+# ── FastAPI 应用 ──────────────────────────────────────────────────────────
+
+app = FastAPI(
+    title="MiMo API Compat Proxy",
+    description="透明修复小米 MiMo API 兼容性问题的代理服务器",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── 全局状态 ──────────────────────────────────────────────────────────────
+
+stats = {
+    "requests": 0,
+    "patched": 0,
+    "errors": 0,
+    "start_time": time.time(),
+}
+
+# ── 辅助函数 ──────────────────────────────────────────────────────────────
+
+
+def get_api_key(request: Request) -> str:
+    """从请求头或环境变量获取 API Key"""
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return MIMO_API_KEY
+
+
+def get_api_base(request: Request) -> str:
+    """获取 API 基础地址（支持通过请求头覆盖）"""
+    return request.headers.get("x-mimo-api-base", MIMO_API_BASE)
+
+
+def should_patch(body: dict) -> bool:
+    """判断是否需要补丁"""
+    messages = body.get("messages", [])
+    for msg in messages:
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            if "reasoning_content" not in msg:
+                return True
+    return False
+
+
+def build_headers(request: Request, api_key: str) -> dict:
+    """构建转发请求头"""
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    # 透传部分请求头
+    for header in ["user-agent", "accept", "x-request-id"]:
+        if header in request.headers:
+            headers[header] = request.headers[header]
+    return headers
+
+
+# ── OpenAI 兼容端点 ──────────────────────────────────────────────────────
+
+
+@app.post("/v1/chat/completions")
+async def chat_completions(request: Request):
+    """OpenAI Chat Completions 代理"""
+    stats["requests"] += 1
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"message": "Invalid JSON body", "type": "invalid_request_error"}},
+        )
+
+    api_key = get_api_key(request)
+    api_base = get_api_base(request)
+    model = body.get("model", "")
+    is_stream = body.get("stream", False)
+
+    # 检查是否需要补丁
+    needs_patch = should_patch(body)
+    if needs_patch:
+        body = patch_request(body, REASONING_MODELS)
+        stats["patched"] += 1
+        logger.info(f"Patched request: model={model} stream={is_stream}")
+
+    url = f"{api_base}/chat/completions"
+    headers = build_headers(request, api_key)
+
+    # 移除不应转发的字段
+    body.pop("stream_options", None)
+
+    try:
+        client = httpx.AsyncClient(timeout=300.0)
+
+        if is_stream:
+            # 流式响应
+            req = client.build_request("POST", url, json=body, headers=headers)
+            resp = await client.send(req, stream=True)
+
+            if resp.status_code != 200:
+                error_body = await resp.aread()
+                await resp.aclose()
+                await client.aclose()
+                stats["errors"] += 1
+                logger.error(f"Upstream error: {resp.status_code} {error_body[:500]}")
+                return Response(
+                    content=error_body,
+                    status_code=resp.status_code,
+                    media_type="application/json",
+                )
+
+            async def stream_generator():
+                try:
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data: "):
+                            yield line + "\n\n"
+                        elif line.strip():
+                            yield line + "\n\n"
+                finally:
+                    await resp.aclose()
+                    await client.aclose()
+
+            return StreamingResponse(
+                stream_generator(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+        else:
+            # 非流式响应
+            resp = await client.post(url, json=body, headers=headers)
+            await client.aclose()
+
+            if resp.status_code != 200:
+                stats["errors"] += 1
+                logger.error(f"Upstream error: {resp.status_code} {resp.text[:500]}")
+
+            return Response(
+                content=resp.content,
+                status_code=resp.status_code,
+                media_type="application/json",
+            )
+
+    except httpx.ConnectError as e:
+        stats["errors"] += 1
+        logger.error(f"Connection error: {e}")
+        return JSONResponse(
+            status_code=502,
+            content={"error": {"message": f"Cannot connect to upstream: {e}", "type": "proxy_error"}},
+        )
+    except Exception as e:
+        stats["errors"] += 1
+        logger.error(f"Proxy error: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": {"message": f"Proxy error: {e}", "type": "proxy_error"}},
+        )
+
+
+@app.get("/v1/models")
+async def list_models(request: Request):
+    """模型列表代理"""
+    api_key = get_api_key(request)
+    api_base = get_api_base(request)
+    headers = build_headers(request, api_key)
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(f"{api_base}/models", headers=headers)
+            return Response(
+                content=resp.content,
+                status_code=resp.status_code,
+                media_type="application/json",
+            )
+    except Exception as e:
+        logger.error(f"Models list error: {e}")
+        return JSONResponse(
+            status_code=502,
+            content={"error": {"message": str(e), "type": "proxy_error"}},
+        )
+
+
+# ── Anthropic 兼容端点 ───────────────────────────────────────────────────
+
+
+@app.post("/v1/messages")
+async def messages(request: Request):
+    """Anthropic Messages API 代理（转换层）"""
+    stats["requests"] += 1
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"message": "Invalid JSON body", "type": "invalid_request_error"}},
+        )
+
+    api_key = get_api_key(request)
+    api_base = get_api_base(request)
+
+    # Anthropic → OpenAI 格式转换
+    openai_body = convert_anthropic_to_openai(body)
+
+    if should_patch(openai_body):
+        openai_body = patch_request(openai_body, REASONING_MODELS)
+        stats["patched"] += 1
+
+    headers = build_headers(request, api_key)
+    url = f"{api_base}/chat/completions"
+
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            resp = await client.post(url, json=openai_body, headers=headers)
+
+            if resp.status_code != 200:
+                stats["errors"] += 1
+                return Response(
+                    content=resp.content,
+                    status_code=resp.status_code,
+                    media_type="application/json",
+                )
+
+            # OpenAI → Anthropic 格式转换
+            openai_resp = resp.json()
+            anthropic_resp = convert_openai_to_anthropic(openai_resp, body)
+
+            return JSONResponse(content=anthropic_resp)
+
+    except Exception as e:
+        stats["errors"] += 1
+        logger.error(f"Anthropic proxy error: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": {"message": str(e), "type": "proxy_error"}},
+        )
+
+
+# ── 协议转换 ──────────────────────────────────────────────────────────────
+
+
+def convert_anthropic_to_openai(body: dict) -> dict:
+    """Anthropic Messages API → OpenAI Chat Completions 格式转换"""
+    messages = []
+    system = body.get("system", "")
+    if system:
+        messages.append({"role": "system", "content": system})
+
+    for msg in body.get("messages", []):
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+
+        # 处理 Anthropic 的 content 数组格式
+        if isinstance(content, list):
+            text_parts = []
+            tool_calls = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text":
+                        text_parts.append(block.get("text", ""))
+                    elif block.get("type") == "tool_use":
+                        tool_calls.append({
+                            "id": block.get("id", ""),
+                            "type": "function",
+                            "function": {
+                                "name": block.get("name", ""),
+                                "arguments": json.dumps(block.get("input", {})),
+                            },
+                        })
+                    elif block.get("type") == "tool_result":
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": block.get("tool_use_id", ""),
+                            "content": str(block.get("content", "")),
+                        })
+                        continue
+
+            if tool_calls:
+                messages.append({
+                    "role": role,
+                    "content": "\n".join(text_parts) if text_parts else "",
+                    "tool_calls": tool_calls,
+                })
+            else:
+                messages.append({"role": role, "content": "\n".join(text_parts)})
+        else:
+            messages.append({"role": role, "content": content})
+
+    # 转换 tools
+    tools = []
+    for tool in body.get("tools", []):
+        tools.append({
+            "type": "function",
+            "function": {
+                "name": tool.get("name", ""),
+                "description": tool.get("description", ""),
+                "parameters": tool.get("input_schema", {}),
+            },
+        })
+
+    result = {
+        "model": body.get("model", ""),
+        "messages": messages,
+        "max_tokens": body.get("max_tokens", 4096),
+        "stream": body.get("stream", False),
+    }
+
+    if tools:
+        result["tools"] = tools
+
+    if "temperature" in body:
+        result["temperature"] = body["temperature"]
+
+    return result
+
+
+def convert_openai_to_anthropic(openai_resp: dict, original_body: dict) -> dict:
+    """OpenAI Chat Completions → Anthropic Messages API 格式转换"""
+    choice = openai_resp.get("choices", [{}])[0]
+    message = choice.get("message", {})
+    finish_reason = choice.get("finish_reason", "end_turn")
+
+    content = []
+    reasoning = message.get("reasoning_content", "")
+    if reasoning:
+        content.append({"type": "thinking", "thinking": reasoning})
+
+    text = message.get("content", "")
+    if text:
+        content.append({"type": "text", "text": text})
+
+    for tc in message.get("tool_calls", []):
+        func = tc.get("function", {})
+        try:
+            args = json.loads(func.get("arguments", "{}"))
+        except json.JSONDecodeError:
+            args = {}
+        content.append({
+            "type": "tool_use",
+            "id": tc.get("id", ""),
+            "name": func.get("name", ""),
+            "input": args,
+        })
+
+    stop_reason_map = {
+        "stop": "end_turn",
+        "length": "max_tokens",
+        "tool_calls": "tool_use",
+        "function_call": "tool_use",
+    }
+
+    usage = openai_resp.get("usage", {})
+
+    return {
+        "id": openai_resp.get("id", ""),
+        "type": "message",
+        "role": "assistant",
+        "model": openai_resp.get("model", ""),
+        "content": content,
+        "stop_reason": stop_reason_map.get(finish_reason, "end_turn"),
+        "usage": {
+            "input_tokens": usage.get("prompt_tokens", 0),
+            "output_tokens": usage.get("completion_tokens", 0),
+        },
+    }
+
+
+# ── 管理端点 ──────────────────────────────────────────────────────────────
+
+
+@app.get("/health")
+async def health():
+    """健康检查"""
+    return {"status": "ok", "uptime": time.time() - stats["start_time"]}
+
+
+@app.get("/stats")
+async def get_stats():
+    """统计信息"""
+    return {
+        **stats,
+        "uptime": time.time() - stats["start_time"],
+        "patch_rate": (
+            f"{stats['patched'] / stats['requests'] * 100:.1f}%"
+            if stats["requests"] > 0
+            else "N/A"
+        ),
+    }
+
+
+@app.get("/")
+async def root():
+    """根路径 - 显示代理信息"""
+    return {
+        "name": "MiMo API Compat Proxy",
+        "version": "1.0.0",
+        "description": "透明修复小米 MiMo API 兼容性问题",
+        "endpoints": {
+            "openai": "/v1/chat/completions",
+            "anthropic": "/v1/messages",
+            "models": "/v1/models",
+            "health": "/health",
+            "stats": "/stats",
+        },
+        "upstream": MIMO_API_BASE,
+    }
+
+
+# ── 入口 ──────────────────────────────────────────────────────────────────
+
+
+def main():
+    parser = argparse.ArgumentParser(description="MiMo API Compat Proxy")
+    parser.add_argument("--host", default=PROXY_HOST, help=f"监听地址 (默认: {PROXY_HOST})")
+    parser.add_argument("--port", type=int, default=PROXY_PORT, help=f"监听端口 (默认: {PROXY_PORT})")
+    parser.add_argument("--api-key", default="", help="MiMo API Key (覆盖环境变量)")
+    parser.add_argument("--api-base", default="", help="MiMo API 地址 (覆盖环境变量)")
+    parser.add_argument("--log-level", default=LOG_LEVEL, help="日志级别")
+    args = parser.parse_args()
+
+    global MIMO_API_KEY, MIMO_API_BASE, LOG_LEVEL
+
+    if args.api_key:
+        MIMO_API_KEY = args.api_key
+    if args.api_base:
+        MIMO_API_BASE = args.api_base
+    if args.log_level:
+        LOG_LEVEL = args.log_level
+
+    if not MIMO_API_KEY:
+        logger.error("未设置 API Key，请通过 --api-key 参数或 MIMO_API_KEY 环境变量设置")
+        sys.exit(1)
+
+    logger.info(f"Starting MiMo API Compat Proxy on {args.host}:{args.port}")
+    logger.info(f"Upstream: {MIMO_API_BASE}")
+    logger.info(f"Reasoning models: {REASONING_MODELS}")
+
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        log_level=LOG_LEVEL.lower(),
+    )
+
+
+if __name__ == "__main__":
+    main()

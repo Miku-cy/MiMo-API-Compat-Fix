@@ -1,0 +1,5 @@
+{
+  "_comment": "Cursor MiMo 配置 - 放入 ~/.cursor/config.json",
+  "openaiBaseUrl": "http://127.0.0.1:9090/v1",
+  "openaiApiKey": "your-mimo-api-key"
+}
