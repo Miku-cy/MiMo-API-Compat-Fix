@@ -27,6 +27,8 @@
 
 > 此规则适用于**所有 MiMo V2 系列模型**，包括非推理模型 MiMo-V2-Flash。
 
+> 数据来源：[官方定价与模型详情](https://platform.xiaomimimo.com/docs/zh-CN/pricing)
+
 ### 2. 推理输出格式
 
 MiMo 使用 DeepSeek 兼容的推理格式：
@@ -54,11 +56,11 @@ MiMo 使用 DeepSeek 兼容的推理格式：
 
 | 模型 | 推理 | 图像 | 上下文 | 最大输出 |
 |------|------|------|--------|---------|
-| MiMo-V2.5-Pro | ✅ | ❌ | 1M | 32K |
-| MiMo-V2.5 | ✅ | ✅ | 256K | 32K |
-| MiMo-V2-Pro | ✅ | ❌ | 1M | 32K |
-| MiMo-V2-Omni | ✅ | ✅ | 256K | 32K |
-| MiMo-V2-Flash | ❌ | ❌ | 256K | 8K |
+| MiMo-V2.5-Pro | ✅ | ❌ | 1M | 128K |
+| MiMo-V2.5 | ✅ | ✅ | 1M | 128K |
+| MiMo-V2-Pro | ✅ | ❌ | 1M | 128K |
+| MiMo-V2-Omni | ✅ | ✅ | 256K | 128K |
+| MiMo-V2-Flash | ✅ | ❌ | 256K | 64K |
 
 ### 4. 流式响应格式
 

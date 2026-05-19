@@ -26,13 +26,15 @@
 
 | 模型 | 推理能力 | 图像输入 | 上下文 | 最大输出 |
 |------|---------|---------|--------|---------|
-| MiMo-V2.5-Pro | ✅ | ❌ | 1M | 32K |
-| MiMo-V2.5 | ✅ | ✅ | 256K | 32K |
-| MiMo-V2-Pro | ✅ | ❌ | 1M | 32K |
-| MiMo-V2-Omni | ✅ | ✅ | 256K | 32K |
-| MiMo-V2-Flash | ❌ | ❌ | 256K | 8K |
+| MiMo-V2.5-Pro | ✅ | ❌ | 1M | 128K |
+| MiMo-V2.5 | ✅ | ✅ | 1M | 128K |
+| MiMo-V2-Pro | ✅ | ❌ | 1M | 128K |
+| MiMo-V2-Omni | ✅ | ✅ | 256K | 128K |
+| MiMo-V2-Flash | ✅ | ❌ | 256K | 64K |
 
 > ⚠️ 所有 MiMo V2 系列模型均受影响，不仅仅是 V2.5。
+
+> 数据来源：[官方定价与模型详情](https://platform.xiaomimimo.com/docs/zh-CN/pricing)
 
 ## 解决方案
 

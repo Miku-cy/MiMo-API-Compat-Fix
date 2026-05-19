@@ -26,13 +26,15 @@ Most AI tools don't send this field, causing multi-turn conversations with tool 
 
 | Model | Reasoning | Vision | Context | Max Output |
 |-------|-----------|--------|---------|------------|
-| MiMo-V2.5-Pro | ✅ | ❌ | 1M | 32K |
-| MiMo-V2.5 | ✅ | ✅ | 256K | 32K |
-| MiMo-V2-Pro | ✅ | ❌ | 1M | 32K |
-| MiMo-V2-Omni | ✅ | ✅ | 256K | 32K |
-| MiMo-V2-Flash | ❌ | ❌ | 256K | 8K |
+| MiMo-V2.5-Pro | ✅ | ❌ | 1M | 128K |
+| MiMo-V2.5 | ✅ | ✅ | 1M | 128K |
+| MiMo-V2-Pro | ✅ | ❌ | 1M | 128K |
+| MiMo-V2-Omni | ✅ | ✅ | 256K | 128K |
+| MiMo-V2-Flash | ✅ | ❌ | 256K | 64K |
 
 > ⚠️ All MiMo V2 models are affected, not just V2.5.
+
+> Source: [Official Pricing & Model Details](https://platform.xiaomimimo.com/docs/zh-CN/pricing)
 
 ## Solutions
 
